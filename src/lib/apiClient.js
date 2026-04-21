@@ -33,10 +33,12 @@
 const DEFAULT_BASE_URL = "http://localhost:8000";
 
 function getBaseUrl() {
-  return String(import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).replace(
-    /\/$/,
-    "",
-  );
+  const baseUrl = String(
+    import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL,
+  ).replace(/\/$/, "");
+
+  // Remove /api suffix if present, since routes will add /api/...
+  return baseUrl.replace(/\/api$/, "");
 }
 
 function toApiUrl(path, params = {}) {
