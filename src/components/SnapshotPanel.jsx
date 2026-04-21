@@ -29,7 +29,10 @@ export function SnapshotPanel({ snapshots, isConnected }) {
                 key={`${snapshot.timestamp}-${snapshot.sessionId}-${snapshot.blobName || "snapshot"}`}>
                 <div className="snapshot-card__media">
                   {snapshot.imageUrl ?
-                    <a href={snapshot.imageUrl} target="_blank" rel="noreferrer">
+                    <a
+                      href={snapshot.imageUrl}
+                      target="_blank"
+                      rel="noreferrer">
                       <img
                         className="snapshot-card__image"
                         src={snapshot.imageUrl}
@@ -37,7 +40,8 @@ export function SnapshotPanel({ snapshots, isConnected }) {
                         loading="lazy"
                       />
                     </a>
-                  : <div className="snapshot-card__placeholder">No preview</div>}
+                  : <div className="snapshot-card__placeholder">No preview</div>
+                  }
                 </div>
 
                 <div className="snapshot-card__meta">
@@ -46,7 +50,8 @@ export function SnapshotPanel({ snapshots, isConnected }) {
                   </strong>
                   <span>{snapshot.timestampLabel}</span>
                   <p>
-                    {snapshot.confidencePercent}% · {snapshot.sizeKbLabel} KB · {snapshot.sessionId.slice(0, 12)}
+                    {snapshot.confidencePercent}% · {snapshot.sizeKbLabel} KB ·{" "}
+                    {snapshot.sessionId.slice(0, 12)}
                   </p>
                 </div>
               </article>
