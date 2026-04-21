@@ -95,7 +95,7 @@ function toUiError(error) {
 
 export function useEmotionDashboard() {
   const [sessionId, setSessionId] = useState("");
-  const [limit, setLimit] = useState(100);
+  const [limit, setLimit] = useState("all");
   const trimmedSessionId = sessionId.trim();
 
   const emotionsQuery = useQuery({

@@ -9,11 +9,17 @@ export async function connectDatabase() {
   }
 
   if (!connectionPromise) {
+    const connectOptions = {
+      autoIndex: true,
+      serverSelectionTimeoutMS: 10000,
+    };
+
+    if (env.mongoDbName) {
+      connectOptions.dbName = env.mongoDbName;
+    }
+
     connectionPromise = mongoose
-      .connect(env.mongoUri, {
-        autoIndex: true,
-        serverSelectionTimeoutMS: 10000,
-      })
+      .connect(env.mongoUri, connectOptions)
       .catch((error) => {
         connectionPromise = null;
         throw error;

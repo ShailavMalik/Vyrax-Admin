@@ -61,4 +61,4 @@ const snapshotSchema = new mongoose.Schema(
 
 snapshotSchema.index({ sessionId: 1, timestamp: -1 });
 
-export const Snapshot = mongoose.model("Snapshot", snapshotSchema);
+export const Snapshot = mongoose.model("Snapshot", snapshotSchema, "snapshots");

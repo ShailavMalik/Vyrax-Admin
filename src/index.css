@@ -2639,6 +2639,11 @@ img {
   border: 1px solid rgba(148, 163, 184, 0.3);
 }
 
+.snapshot-table__no-preview {
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 0.78rem;
+}
+
 .snapshot-panel-latest {
   margin-top: 10px;
   color: rgba(226, 232, 240, 0.95);

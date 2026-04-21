@@ -56,6 +56,14 @@ function toApiUrl(path, params = {}) {
 }
 
 function clampLimit(value, fallback, max) {
+  if (
+    String(value ?? "")
+      .trim()
+      .toLowerCase() === "all"
+  ) {
+    return "all";
+  }
+
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (Number.isNaN(parsed) || parsed <= 0) {
     return fallback;
@@ -120,6 +128,9 @@ export async function fetchEmotions(sessionId, limit) {
 
 /** @returns {Promise<SessionSummary|SessionSummary[]>} */
 export async function fetchSummary(sessionId) {
-  const payload = await requestJson("/api/summary", { sessionId });
+  const payload = await requestJson("/api/summary", {
+    sessionId,
+    limit: "all",
+  });
   return payload?.summary ?? (sessionId ? null : []);
 }

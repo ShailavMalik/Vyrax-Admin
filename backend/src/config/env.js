@@ -5,6 +5,7 @@ export const env = {
   port: Number(process.env.PORT ?? 8080),
   host: process.env.HOST ?? "0.0.0.0",
   mongoUri: process.env.MONGODB_URI ?? "mongodb://127.0.0.1:27017/vyrax-admin",
+  mongoDbName: process.env.MONGODB_DB ?? "",
   publicAppUrl: process.env.PUBLIC_APP_URL ?? "",
   apiBaseUrl: process.env.API_BASE_URL ?? "",
   storageProvider: process.env.STORAGE_PROVIDER ?? "azure",

@@ -37,4 +37,8 @@ const emotionEventSchema = new mongoose.Schema(
 
 emotionEventSchema.index({ sessionId: 1, timestamp: 1 }, { unique: true });
 
-export const EmotionEvent = mongoose.model("EmotionEvent", emotionEventSchema);
+export const EmotionEvent = mongoose.model(
+  "EmotionEvent",
+  emotionEventSchema,
+  "emotions",
+);

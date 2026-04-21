@@ -81,11 +81,13 @@ export function AdminDashboard() {
             Limit
             <select
               value={String(limit)}
-              onChange={(event) => setLimit(Number(event.target.value))}>
+              onChange={(event) => setLimit(event.target.value)}>
+              <option value="all">All</option>
               <option value="50">50</option>
               <option value="100">100</option>
               <option value="250">250</option>
               <option value="500">500</option>
+              <option value="1000">1000</option>
             </select>
           </label>
           <div className="command-center__session-chip">

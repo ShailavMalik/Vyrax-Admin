@@ -11,6 +11,7 @@ import {
   calculateTransitions,
 } from "../services/analytics.js";
 import { storeSnapshotAsset } from "../services/storage.js";
+import { env } from "../config/env.js";
 
 const router = express.Router();
 const upload = multer({
@@ -23,6 +24,14 @@ function getSessionId(req) {
 }
 
 function parseLimit(rawLimit, fallback, max) {
+  if (rawLimit == null || String(rawLimit).trim() === "") {
+    return fallback;
+  }
+
+  if (String(rawLimit).trim().toLowerCase() === "all") {
+    return null;
+  }
+
   const numericLimit = Number.parseInt(String(rawLimit ?? ""), 10);
   if (Number.isNaN(numericLimit) || numericLimit <= 0) {
     return fallback;
@@ -39,6 +48,53 @@ function toIsoTimestamp(value) {
 
   const date = new Date(parsed);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function getPublicBaseUrl(req) {
+  if (env.publicAppUrl) {
+    return String(env.publicAppUrl).replace(/\/$/, "");
+  }
+
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+function resolveSnapshotImageUrl(snapshot, req) {
+  if (snapshot.imageUrl) {
+    return snapshot.imageUrl;
+  }
+
+  if (snapshot.url) {
+    return snapshot.url;
+  }
+
+  if (snapshot.metadata?.imageUrl) {
+    return snapshot.metadata.imageUrl;
+  }
+
+  const key =
+    snapshot.blobName || snapshot.storageKey || snapshot.metadata?.storageKey;
+  if (!key) {
+    return null;
+  }
+
+  const normalizedKey = String(key).replace(/^\//, "");
+  const baseUrl = getPublicBaseUrl(req);
+  const localLikeStorage =
+    snapshot.storageProvider === "local" || normalizedKey.includes("__");
+
+  if (localLikeStorage) {
+    return `${baseUrl}/uploads/${normalizedKey}`;
+  }
+
+  if (env.azureStoragePublicUrl) {
+    return `${String(env.azureStoragePublicUrl).replace(/\/$/, "")}/${normalizedKey}`;
+  }
+
+  if (env.cloudflareR2PublicUrl) {
+    return `${String(env.cloudflareR2PublicUrl).replace(/\/$/, "")}/${normalizedKey}`;
+  }
+
+  return null;
 }
 
 function serializeSummary(summary, sessionDoc = null) {
@@ -87,13 +143,15 @@ async function ensureSession(sessionId) {
 router.get("/emotions", async (req, res, next) => {
   try {
     const sessionId = getSessionId(req);
-    const limit = parseLimit(req.query.limit, 500, 5000);
+    const limit = parseLimit(req.query.limit, null, 5000);
     const query = sessionId ? { sessionId } : {};
 
-    const timeline = await EmotionEvent.find(query)
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .lean();
+    const timelineQuery = EmotionEvent.find(query).sort({ timestamp: -1 });
+    if (limit != null) {
+      timelineQuery.limit(limit);
+    }
+
+    const timeline = await timelineQuery.lean();
 
     const items = timeline
       .map(({ sessionId: rowSessionId, timestamp, emotion, confidence }) => ({
@@ -122,19 +180,21 @@ router.get("/emotions", async (req, res, next) => {
 router.get("/snapshots", async (req, res, next) => {
   try {
     const sessionId = getSessionId(req);
-    const limit = parseLimit(req.query.limit, 100, 1000);
+    const limit = parseLimit(req.query.limit, null, 1000);
     const query = sessionId ? { sessionId } : {};
 
-    const snapshots = await Snapshot.find(query)
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .lean();
+    const snapshotsQuery = Snapshot.find(query).sort({ timestamp: -1 });
+    if (limit != null) {
+      snapshotsQuery.limit(limit);
+    }
+
+    const snapshots = await snapshotsQuery.lean();
 
     const items = snapshots
-      .map(
-        ({
+      .map((row) => {
+        const imageUrl = resolveSnapshotImageUrl(row, req);
+        const {
           sessionId: rowSessionId,
-          imageUrl,
           emotion,
           confidence,
           timestamp,
@@ -143,7 +203,9 @@ router.get("/snapshots", async (req, res, next) => {
           contentType,
           sizeBytes,
           reason,
-        }) => ({
+        } = row;
+
+        return {
           sessionId: rowSessionId,
           imageUrl,
           emotion,
@@ -153,9 +215,9 @@ router.get("/snapshots", async (req, res, next) => {
           contentType: contentType || "image/webp",
           sizeBytes: Number(sizeBytes || 0),
           reason: reason || null,
-        }),
-      )
-      .filter((item) => item.timestamp != null && item.imageUrl);
+        };
+      })
+      .filter((item) => item.timestamp != null);
 
     return res.json({
       ok: true,
@@ -170,6 +232,7 @@ router.get("/snapshots", async (req, res, next) => {
 router.get("/summary", async (req, res, next) => {
   try {
     const sessionId = getSessionId(req);
+    const limit = parseLimit(req.query.limit, null, 5000);
 
     if (sessionId) {
       const sessionDoc = await ensureSession(sessionId);
@@ -180,10 +243,12 @@ router.get("/summary", async (req, res, next) => {
       });
     }
 
-    const latestSessions = await Session.find({})
-      .sort({ updatedAt: -1 })
-      .limit(10)
-      .lean();
+    const sessionQuery = Session.find({}).sort({ updatedAt: -1 });
+    if (limit != null) {
+      sessionQuery.limit(limit);
+    }
+
+    const latestSessions = await sessionQuery.lean();
 
     const summary = await Promise.all(
       latestSessions.map(async (sessionDoc) => {
