@@ -1,75 +1,62 @@
 import { SectionCard } from "./SectionCard.jsx";
 
-const EMOJI = {
-  neutral: "◦",
-  happy: "😊",
-  sad: "🌧",
-  angry: "🔥",
-  surprised: "⚡",
-};
+const KNOWN_REASONS = new Set([
+  "first_snapshot",
+  "emotion_change",
+  "cooldown_emotion_change",
+  "periodic_high_confidence",
+  "cooldown_high_confidence",
+  "periodic_keepalive",
+  "gated",
+  "dark_frame",
+  "no_face_detected",
+  "camera_disabled_ui",
+]);
 
-function deriveTransitions(timeline) {
-  if (!Array.isArray(timeline) || timeline.length < 2) {
-    return [];
+function normalizeReason(value) {
+  if (!value) {
+    return "not_available";
   }
 
-  const transitions = [];
-
-  for (let index = 1; index < timeline.length; index += 1) {
-    const previousPoint = timeline[index - 1];
-    const currentPoint = timeline[index];
-
-    if (previousPoint.emotion === currentPoint.emotion) {
-      continue;
-    }
-
-    transitions.unshift({
-      id: `${previousPoint.timestamp}-${currentPoint.timestamp}`,
-      from: previousPoint.emotion,
-      to: currentPoint.emotion,
-      timeLabel: currentPoint.timeLabel,
-      reason:
-        currentPoint.confidence >= 0.8 ? "High-confidence transition confirmed"
-        : currentPoint.value > previousPoint.value ?
-          "Escalation detected by live model"
-        : "Behavioral correction detected",
-    });
-  }
-
-  return transitions.slice(0, 10);
+  return String(value).trim();
 }
 
-export function TransitionLog({ timeline }) {
-  const derivedTransitions = deriveTransitions(timeline);
+export function TransitionLog({ latestReason, logs }) {
+  const normalizedLatestReason = normalizeReason(latestReason);
 
   return (
     <SectionCard
-      title="Emotion transition log"
-      subtitle="Recent changes are retained as a compact evidence trail so the operator can see exactly when the session shifted state.">
+      title="Snapshot gating logs"
+      subtitle="Latest snapshot gating reason and recent reason events from backend snapshots.">
+      <div className="transition-log__latest">
+        <span>Latest reason</span>
+        <strong>{normalizedLatestReason}</strong>
+      </div>
+
       <div className="transition-list">
-        {derivedTransitions.length ?
-          derivedTransitions.map((transition) => (
-            <article className="transition-item" key={transition.id}>
+        {logs.length ?
+          logs.map((entry) => (
+            <article
+              className="transition-item"
+              key={`${entry.timestamp}-${entry.sessionId}-${entry.reason}`}>
               <div className="transition-item__row">
                 <div className="transition-item__label">
-                  <span>{EMOJI[transition.from]}</span>
-                  <span>
-                    {transition.from.charAt(0).toUpperCase() +
-                      transition.from.slice(1)}{" "}
-                    →{" "}
-                    {transition.to.charAt(0).toUpperCase() +
-                      transition.to.slice(1)}
-                  </span>
+                  <span>{entry.sessionId.slice(0, 12)}</span>
+                  <span>{normalizeReason(entry.reason)}</span>
                 </div>
                 <span className="transition-item__meta">
-                  {transition.timeLabel}
+                  {entry.timestampLabel}
                 </span>
               </div>
-              <p className="transition-item__reason">{transition.reason}</p>
+              <p className="transition-item__reason">
+                {KNOWN_REASONS.has(normalizeReason(entry.reason)) ?
+                  "Known gating reason"
+                : "Custom reason from backend"}
+              </p>
             </article>
           ))
         : <div className="empty-state">
-            Waiting for the first emotion shift.
+            Waiting for snapshot gating reasons.
           </div>
         }
       </div>

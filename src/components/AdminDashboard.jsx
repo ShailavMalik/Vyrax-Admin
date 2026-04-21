@@ -1,71 +1,45 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useEmotionDashboard } from "../hooks/useEmotionDashboard.js";
 import { EmotionTimeline } from "./EmotionTimeline.jsx";
 import { LiveIndicator } from "./LiveIndicator.jsx";
 import { RefreshButton } from "./RefreshButton.jsx";
 import { SummaryPanel } from "./SummaryPanel.jsx";
 import { SnapshotPanel } from "./SnapshotPanel.jsx";
-import { InsightsPanel } from "./InsightsPanel.jsx";
-import { findClosestSnapshot } from "../lib/emotionFeed.js";
+import { TransitionLog } from "./TransitionLog.jsx";
 
 export function AdminDashboard() {
-  const { data, isLoading, isFetching, refetch } = useEmotionDashboard();
-  const [selectedSnapshotTimestamp, setSelectedSnapshotTimestamp] =
-    useState(null);
+  const {
+    data,
+    error,
+    isLoading,
+    isFetching,
+    refetch,
+    sessionId,
+    setSessionId,
+    limit,
+    setLimit,
+  } = useEmotionDashboard();
 
   const liveSession = data ?? {
     sessionId: null,
-    timeline: [],
+    emotions: [],
     snapshots: [],
-    summary: {
-      dominantEmotion: null,
-      avgConfidence: 0,
-      totalEvents: 0,
-      transitions: 0,
-      sessionDurationSeconds: 0,
-      sessionDurationLabel: "00:00:00",
-      currentEmotion: null,
-      currentConfidence: null,
-      dominantEmotionLabel: "—",
-      dominantEmotionEmoji: "—",
-      averageConfidenceLabel: "0%",
-      peakMoment: "—",
-      peakConfidenceTime: "—",
-      mostFrequentEmotion: "—",
-      stabilityScore: 0,
-      stabilityLabel: "Low",
-    },
-    distribution: [],
-    insights: ["Waiting for backend data."],
+    summaries: [],
+    latestSnapshotReason: null,
+    latestSnapshotLogs: [],
     hasData: false,
-    latestSnapshotTimestamp: null,
-    latestEmotionTimestamp: null,
-    latestSnapshotAgeSeconds: null,
   };
+  const summaryHeadline = useMemo(() => {
+    if (!liveSession.summaries.length) {
+      return "No summary available";
+    }
 
-  const session = liveSession.summary;
-  const activeSnapshotTimestamp =
-    selectedSnapshotTimestamp ?? liveSession.snapshots[0]?.timestamp ?? null;
+    if (liveSession.sessionId) {
+      return "Session scoped summary";
+    }
 
-  const activeSnapshot = useMemo(
-    () =>
-      liveSession.snapshots.find(
-        (snapshot) => snapshot.timestamp === activeSnapshotTimestamp,
-      ) ??
-      liveSession.snapshots[0] ??
-      null,
-    [activeSnapshotTimestamp, liveSession.snapshots],
-  );
-
-  const handleTimelineSelect = (timestamp) => {
-    const closestSnapshot = findClosestSnapshot(
-      liveSession.snapshots,
-      timestamp,
-    );
-    setSelectedSnapshotTimestamp(
-      closestSnapshot?.timestamp ?? activeSnapshotTimestamp,
-    );
-  };
+    return "Latest session summaries";
+  }, [liveSession.summaries.length, liveSession.sessionId]);
 
   return (
     <div className="command-center">
@@ -94,26 +68,54 @@ export function AdminDashboard() {
         <div className="command-center__controls">
           <LiveIndicator isFetching={isFetching} />
           <RefreshButton onClick={refetch} isFetching={isFetching} />
+          <label className="command-center__filter">
+            Session ID
+            <input
+              value={sessionId}
+              onChange={(event) => setSessionId(event.target.value)}
+              placeholder="optional"
+              type="text"
+            />
+          </label>
+          <label className="command-center__filter">
+            Limit
+            <select
+              value={String(limit)}
+              onChange={(event) => setLimit(Number(event.target.value))}>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+            </select>
+          </label>
           <div className="command-center__session-chip">
             Session{" "}
-            {liveSession.sessionId ? liveSession.sessionId.slice(0, 8) : "—"}
+            {liveSession.sessionId ? liveSession.sessionId.slice(0, 12) : "All"}
           </div>
         </div>
       </header>
 
+      {error ?
+        <section className="command-center__error section-card">
+          <h3>{error.title}</h3>
+          <p>{error.message}</p>
+          <button type="button" onClick={refetch}>
+            Retry
+          </button>
+        </section>
+      : null}
+
       <SummaryPanel
-        session={session}
-        latestEmotionTimestamp={liveSession.latestEmotionTimestamp}
-        latestSnapshotTimestamp={liveSession.latestSnapshotTimestamp}
+        summaries={liveSession.summaries}
+        headline={summaryHeadline}
         isFetching={isFetching}
       />
 
       <div className="command-center__body">
         <section className="command-center__panel command-center__panel--main section-card">
           <EmotionTimeline
-            timeline={liveSession.timeline}
-            selectedSnapshotTimestamp={activeSnapshotTimestamp}
-            onPointSelect={handleTimelineSelect}
+            emotions={liveSession.emotions}
+            isConnected={liveSession.hasData}
             isFetching={isFetching}
             hasData={liveSession.hasData}
           />
@@ -122,15 +124,15 @@ export function AdminDashboard() {
         <aside className="command-center__panel command-center__panel--side section-card">
           <SnapshotPanel
             snapshots={liveSession.snapshots}
-            selectedSnapshotTimestamp={activeSnapshotTimestamp}
-            onSelectSnapshot={setSelectedSnapshotTimestamp}
-            activeSnapshot={activeSnapshot}
             isConnected={liveSession.hasData}
           />
         </aside>
       </div>
 
-      <InsightsPanel session={session} insights={liveSession.insights} />
+      <TransitionLog
+        latestReason={liveSession.latestSnapshotReason}
+        logs={liveSession.latestSnapshotLogs}
+      />
 
       {isLoading || !liveSession.hasData ?
         <div className="command-center__connecting">

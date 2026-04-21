@@ -33,6 +33,18 @@ const snapshotSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    blobName: {
+      type: String,
+      default: null,
+    },
+    contentType: {
+      type: String,
+      default: "image/webp",
+    },
+    sizeBytes: {
+      type: Number,
+      default: 0,
+    },
     reason: {
       type: String,
       default: "emotion-change",

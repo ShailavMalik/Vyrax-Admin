@@ -9,10 +9,15 @@ export async function connectDatabase() {
   }
 
   if (!connectionPromise) {
-    connectionPromise = mongoose.connect(env.mongoUri, {
-      autoIndex: true,
-      serverSelectionTimeoutMS: 10000,
-    });
+    connectionPromise = mongoose
+      .connect(env.mongoUri, {
+        autoIndex: true,
+        serverSelectionTimeoutMS: 10000,
+      })
+      .catch((error) => {
+        connectionPromise = null;
+        throw error;
+      });
   }
 
   return connectionPromise;

@@ -15,120 +15,42 @@ function TimelineTooltip({ active, payload }) {
     return null;
   }
 
-  const point = payload[0].payload;
+  const point = payload[0]?.payload;
+  if (!point) {
+    return null;
+  }
+
+  const emotionRows = Object.keys(EMOTIONS)
+    .map((emotion) => ({ emotion, confidence: point[emotion] }))
+    .filter((row) => typeof row.confidence === "number");
 
   return (
     <div className="tooltip-card">
-      <p className="tooltip-card__title">
-        {point.emoji} {point.label}
-      </p>
-      <p className="tooltip-card__line">
-        Confidence: {Math.round(point.confidence * 100)}%
-      </p>
-      <p className="tooltip-card__line">Timestamp: {point.timeLabel}</p>
-      <p className="tooltip-card__line">
-        Snapshot: {point.snapshotAvailable ? "Available" : "Not stored"}
-      </p>
+      <p className="tooltip-card__title">{point.timestampLabel}</p>
+      {emotionRows.map((row) => (
+        <p className="tooltip-card__line" key={row.emotion}>
+          {EMOTIONS[row.emotion].emoji} {EMOTIONS[row.emotion].label}:{" "}
+          {(row.confidence * 100).toFixed(1)}%
+        </p>
+      ))}
     </div>
   );
 }
 
-function TimelineDot({
-  cx,
-  cy,
-  payload,
-  onPointSelect,
-  selectedSnapshotTimestamp,
-  latestTimestamp,
-}) {
-  if (cx == null || cy == null || !payload) {
-    return null;
-  }
-
-  const emotion = EMOTIONS[payload.emotion] ?? EMOTIONS.neutral;
-  const isSelected = payload.snapshotTimestamp === selectedSnapshotTimestamp;
-  const isLatest = payload.timestamp === latestTimestamp;
-  const isHot = payload.isPeak || isSelected || isLatest;
-
-  return (
-    <g
-      style={{ cursor: "pointer" }}
-      onClick={() => onPointSelect?.(payload.timestamp)}>
-      <circle
-        cx={cx}
-        cy={cy}
-        r={
-          isLatest ? 8.5
-          : isHot ?
-            8
-          : 5
-        }
-        fill={emotion.color}
-        opacity="0.95"
-        style={
-          isLatest ?
-            { animation: "timelinePulse 1.3s ease-in-out infinite" }
-          : undefined
-        }
-      />
-      <circle
-        cx={cx}
-        cy={cy}
-        r={
-          isLatest ? 16
-          : isHot ?
-            13
-          : 9
-        }
-        fill={emotion.color}
-        opacity="0.16"
-      />
-      {payload.isPeak ?
-        <circle
-          cx={cx}
-          cy={cy}
-          r={17}
-          fill="none"
-          stroke={emotion.color}
-          strokeWidth="1.5"
-          opacity="0.5"
-        />
-      : null}
-    </g>
-  );
-}
-
 export function EmotionTimeline({
-  timeline,
-  selectedSnapshotTimestamp,
-  onPointSelect,
+  emotions,
   isConnected,
   isFetching,
   hasData,
 }) {
   const chartData = useMemo(
     () =>
-      timeline.map((point) => ({
-        ...point,
-        lineValue: point.value,
+      emotions.map((point) => ({
+        timestampLabel: point.timestampLabel,
+        [point.emotion]: Number(point.confidence || 0),
       })),
-    [timeline],
+    [emotions],
   );
-
-  const peakPoint = chartData.reduce(
-    (winner, point) => {
-      const score = point.value * point.confidence;
-      return score > winner.score ? { score, point } : winner;
-    },
-    { score: 0, point: chartData[chartData.length - 1] ?? null },
-  ).point;
-  const latestPoint = chartData.at(-1) ?? null;
-
-  const chartLegend = [
-    { label: "Emotion state", color: "#22d3ee" },
-    { label: "Peak moments", color: "#c084fc" },
-    { label: "Selected snapshot", color: "#facc15" },
-  ];
 
   if (!chartData.length) {
     return (
@@ -146,12 +68,18 @@ export function EmotionTimeline({
     );
   }
 
+  const chartLegend = Object.entries(EMOTIONS).map(([emotion, meta]) => ({
+    emotion,
+    label: `${meta.emoji} ${meta.label}`,
+    color: meta.color,
+  }));
+
   return (
     <div className="timeline-chart-wrapper">
       <div className="chart-topline">
         <div className="chart-legend">
           {chartLegend.map((entry) => (
-            <span className="mini-chip" key={entry.label}>
+            <span className="mini-chip" key={entry.emotion}>
               <span
                 className="mini-chip__dot"
                 style={{ background: entry.color }}
@@ -161,10 +89,8 @@ export function EmotionTimeline({
           ))}
         </div>
         <span className="chart-meta">
-          {isConnected ? "Connected" : "Searching"} · Peak signal:{" "}
-          <strong>
-            {peakPoint ? `${peakPoint.emoji} ${peakPoint.label}` : "—"}
-          </strong>
+          {isConnected ? "Connected" : "Searching"} · Confidence by emotion over
+          time
         </span>
       </div>
 
@@ -193,7 +119,7 @@ export function EmotionTimeline({
               vertical={false}
             />
             <XAxis
-              dataKey="timeLabel"
+              dataKey="timestampLabel"
               tickLine={false}
               axisLine={false}
               tickMargin={14}
@@ -202,46 +128,29 @@ export function EmotionTimeline({
               style={{ fontSize: "0.85rem" }}
             />
             <YAxis
-              dataKey="lineValue"
+              type="number"
               tickLine={false}
               axisLine={false}
-              domain={[1, 5]}
-              ticks={[1, 2, 3, 4, 5]}
-              tickFormatter={(value) => {
-                const emotion = Object.values(EMOTIONS).find(
-                  (entry) => entry.value === value,
-                );
-                return emotion ? emotion.emoji : value;
-              }}
+              domain={[0, 1]}
+              ticks={[0, 0.25, 0.5, 0.75, 1]}
+              tickFormatter={(value) => `${Math.round(value * 100)}%`}
               stroke="rgba(148, 163, 184, 0.82)"
               style={{ fontSize: "0.85rem" }}
             />
             <Tooltip content={<TimelineTooltip />} />
-            <Line
-              type="monotone"
-              dataKey="lineValue"
-              stroke="url(#emotionStroke)"
-              strokeWidth={3.5}
-              filter="url(#glowEffect)"
-              isAnimationActive={true}
-              animationDuration={800}
-              dot={(props) => (
-                <TimelineDot
-                  {...props}
-                  onPointSelect={onPointSelect}
-                  selectedSnapshotTimestamp={selectedSnapshotTimestamp}
-                  latestTimestamp={latestPoint?.timestamp ?? null}
-                />
-              )}
-              activeDot={(props) => (
-                <TimelineDot
-                  {...props}
-                  onPointSelect={onPointSelect}
-                  selectedSnapshotTimestamp={selectedSnapshotTimestamp}
-                  latestTimestamp={latestPoint?.timestamp ?? null}
-                />
-              )}
-            />
+            {Object.entries(EMOTIONS).map(([emotion, meta]) => (
+              <Line
+                key={emotion}
+                type="monotone"
+                dataKey={emotion}
+                stroke={meta.color}
+                strokeWidth={2.6}
+                connectNulls={false}
+                dot={false}
+                isAnimationActive={true}
+                animationDuration={600}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -250,18 +159,14 @@ export function EmotionTimeline({
         <div className="timeline-stat">
           <span>Now</span>
           <strong>
-            {timeline.length ? timeline[timeline.length - 1].label : "—"}
+            {emotions.length ?
+              `${emotions.at(-1).emotionMeta.emoji} ${emotions.at(-1).emotionMeta.label}`
+            : "—"}
           </strong>
         </div>
         <div className="timeline-stat">
-          <span>Snapshots</span>
-          <strong>
-            {timeline.filter((point) => point.snapshotAvailable).length}
-          </strong>
-        </div>
-        <div className="timeline-stat">
-          <span>Peak</span>
-          <strong>{peakPoint ? `${peakPoint.emoji}` : "—"}</strong>
+          <span>Points</span>
+          <strong>{emotions.length}</strong>
         </div>
         <div className="timeline-stat">
           <span>Live</span>

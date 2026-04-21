@@ -89,6 +89,8 @@ export async function buildSessionSummary(sessionId) {
   const events = await EmotionEvent.find({ sessionId })
     .sort({ timestamp: 1 })
     .lean();
+  const firstTimestamp = events[0]?.timestamp ?? null;
+  const lastTimestamp = events.at(-1)?.timestamp ?? null;
   const totalEvents = events.length;
   const avgConfidence = calculateAverageConfidence(events);
   const dominantEmotion = calculateDominantEmotion(events);
@@ -100,11 +102,17 @@ export async function buildSessionSummary(sessionId) {
   );
 
   return {
+    sessionId,
+    startTime:
+      firstTimestamp ? new Date(Number(firstTimestamp)).toISOString() : null,
+    endTime:
+      lastTimestamp ? new Date(Number(lastTimestamp)).toISOString() : null,
     dominantEmotion,
     avgConfidence,
     totalEvents,
     transitions,
     stabilityScore,
     mostFrequentEmotion: dominantEmotion,
+    updatedAt: new Date().toISOString(),
   };
 }

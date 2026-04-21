@@ -68,6 +68,8 @@ export async function storeSnapshotAsset({
     .toBuffer();
 
   const storageKey = createStorageKey({ sessionId, emotion, timestamp });
+  const contentType = "image/webp";
+  const sizeBytes = compressedBuffer.length;
   const publicBaseUrl =
     env.azureStoragePublicUrl.replace(/\/$/, "") ||
     env.cloudflareR2PublicUrl.replace(/\/$/, "");
@@ -87,6 +89,9 @@ export async function storeSnapshotAsset({
     return {
       storageProvider: "azure",
       storageKey,
+      blobName: storageKey,
+      contentType,
+      sizeBytes,
       imageUrl: `${publicBaseUrl}/${storageKey}`,
     };
   }
@@ -99,13 +104,16 @@ export async function storeSnapshotAsset({
         Bucket: env.cloudflareR2Bucket,
         Key: storageKey,
         Body: compressedBuffer,
-        ContentType: "image/webp",
+        ContentType: contentType,
       }),
     );
 
     return {
       storageProvider: "r2",
       storageKey,
+      blobName: storageKey,
+      contentType,
+      sizeBytes,
       imageUrl: `${publicBaseUrl}/${storageKey}`,
     };
   }
@@ -119,6 +127,9 @@ export async function storeSnapshotAsset({
   return {
     storageProvider: "local",
     storageKey: localFileName,
+    blobName: localFileName,
+    contentType,
+    sizeBytes,
     imageUrl: `${localBaseUrl}/uploads/${localFileName}`,
   };
 }

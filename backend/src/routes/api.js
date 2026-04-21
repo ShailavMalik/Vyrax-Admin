@@ -19,7 +19,50 @@ const upload = multer({
 });
 
 function getSessionId(req) {
-  return String(req.query.sessionId || req.body.sessionId || "").trim();
+  return String(req.query?.sessionId || req.body?.sessionId || "").trim();
+}
+
+function parseLimit(rawLimit, fallback, max) {
+  const numericLimit = Number.parseInt(String(rawLimit ?? ""), 10);
+  if (Number.isNaN(numericLimit) || numericLimit <= 0) {
+    return fallback;
+  }
+
+  return Math.min(numericLimit, max);
+}
+
+function toIsoTimestamp(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const date = new Date(parsed);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function serializeSummary(summary, sessionDoc = null) {
+  return {
+    sessionId: summary?.sessionId || sessionDoc?.sessionId || "",
+    startTime:
+      summary?.startTime ||
+      (sessionDoc?.firstSeenAt ?
+        new Date(sessionDoc.firstSeenAt).toISOString()
+      : null),
+    endTime:
+      summary?.endTime ||
+      (sessionDoc?.lastSeenAt ?
+        new Date(sessionDoc.lastSeenAt).toISOString()
+      : null),
+    totalEvents: Number(summary?.totalEvents || 0),
+    dominantEmotion: summary?.dominantEmotion || "neutral",
+    avgConfidence: Number(summary?.avgConfidence || 0),
+    updatedAt:
+      summary?.updatedAt ||
+      (sessionDoc?.updatedAt ?
+        new Date(sessionDoc.updatedAt).toISOString()
+      : new Date().toISOString()),
+  };
 }
 
 async function ensureSession(sessionId) {
@@ -29,7 +72,6 @@ async function ensureSession(sessionId) {
       $setOnInsert: {
         sessionId,
         firstSeenAt: new Date(),
-        active: true,
       },
       $set: {
         lastSeenAt: new Date(),
@@ -45,21 +87,33 @@ async function ensureSession(sessionId) {
 router.get("/emotions", async (req, res, next) => {
   try {
     const sessionId = getSessionId(req);
-    if (!sessionId) {
-      return res.status(400).json({ error: "sessionId is required" });
-    }
+    const limit = parseLimit(req.query.limit, 500, 5000);
+    const query = sessionId ? { sessionId } : {};
 
-    await ensureSession(sessionId);
-    const timeline = await EmotionEvent.find({ sessionId })
-      .sort({ timestamp: 1 })
+    const timeline = await EmotionEvent.find(query)
+      .sort({ timestamp: -1 })
+      .limit(limit)
       .lean();
-    return res.json(
-      timeline.map(({ timestamp, emotion, confidence }) => ({
-        timestamp,
+
+    const items = timeline
+      .map(({ sessionId: rowSessionId, timestamp, emotion, confidence }) => ({
+        sessionId: rowSessionId,
+        timestamp: toIsoTimestamp(timestamp),
         emotion,
         confidence,
-      })),
-    );
+      }))
+      .filter((item) => item.timestamp != null)
+      .sort(
+        (left, right) =>
+          new Date(left.timestamp).getTime() -
+          new Date(right.timestamp).getTime(),
+      );
+
+    return res.json({
+      ok: true,
+      count: items.length,
+      items,
+    });
   } catch (error) {
     return next(error);
   }
@@ -68,23 +122,46 @@ router.get("/emotions", async (req, res, next) => {
 router.get("/snapshots", async (req, res, next) => {
   try {
     const sessionId = getSessionId(req);
-    if (!sessionId) {
-      return res.status(400).json({ error: "sessionId is required" });
-    }
+    const limit = parseLimit(req.query.limit, 100, 1000);
+    const query = sessionId ? { sessionId } : {};
 
-    await ensureSession(sessionId);
-    const snapshots = await Snapshot.find({ sessionId })
+    const snapshots = await Snapshot.find(query)
       .sort({ timestamp: -1 })
+      .limit(limit)
       .lean();
-    return res.json(
-      snapshots.map(({ imageUrl, emotion, confidence, timestamp, reason }) => ({
-        imageUrl,
-        emotion,
-        confidence,
-        timestamp,
-        reason,
-      })),
-    );
+
+    const items = snapshots
+      .map(
+        ({
+          sessionId: rowSessionId,
+          imageUrl,
+          emotion,
+          confidence,
+          timestamp,
+          blobName,
+          storageKey,
+          contentType,
+          sizeBytes,
+          reason,
+        }) => ({
+          sessionId: rowSessionId,
+          imageUrl,
+          emotion,
+          confidence,
+          timestamp: toIsoTimestamp(timestamp),
+          blobName: blobName || storageKey || null,
+          contentType: contentType || "image/webp",
+          sizeBytes: Number(sizeBytes || 0),
+          reason: reason || null,
+        }),
+      )
+      .filter((item) => item.timestamp != null && item.imageUrl);
+
+    return res.json({
+      ok: true,
+      count: items.length,
+      items,
+    });
   } catch (error) {
     return next(error);
   }
@@ -93,13 +170,32 @@ router.get("/snapshots", async (req, res, next) => {
 router.get("/summary", async (req, res, next) => {
   try {
     const sessionId = getSessionId(req);
-    if (!sessionId) {
-      return res.status(400).json({ error: "sessionId is required" });
+
+    if (sessionId) {
+      const sessionDoc = await ensureSession(sessionId);
+      const summary = await buildSessionSummary(sessionId);
+      return res.json({
+        ok: true,
+        summary: serializeSummary(summary, sessionDoc),
+      });
     }
 
-    await ensureSession(sessionId);
-    const summary = await buildSessionSummary(sessionId);
-    return res.json(summary);
+    const latestSessions = await Session.find({})
+      .sort({ updatedAt: -1 })
+      .limit(10)
+      .lean();
+
+    const summary = await Promise.all(
+      latestSessions.map(async (sessionDoc) => {
+        const sessionSummary = await buildSessionSummary(sessionDoc.sessionId);
+        return serializeSummary(sessionSummary, sessionDoc);
+      }),
+    );
+
+    return res.json({
+      ok: true,
+      summary,
+    });
   } catch (error) {
     return next(error);
   }
@@ -173,11 +269,9 @@ router.post("/ingest/emotion", async (req, res, next) => {
       metadata = {},
     } = req.body ?? {};
     if (!sessionId || !emotion || typeof confidence !== "number") {
-      return res
-        .status(400)
-        .json({
-          error: "sessionId, emotion, and numeric confidence are required",
-        });
+      return res.status(400).json({
+        error: "sessionId, emotion, and numeric confidence are required",
+      });
     }
 
     const session = await ensureSession(sessionId);
@@ -241,12 +335,9 @@ router.post(
         typeof confidence !== "string" ||
         !req.file
       ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "sessionId, emotion, confidence, and image file are required",
-          });
+        return res.status(400).json({
+          error: "sessionId, emotion, confidence, and image file are required",
+        });
       }
 
       const numericConfidence = Number(confidence);
@@ -271,6 +362,9 @@ router.post(
         imageUrl: uploadResult.imageUrl,
         storageProvider: uploadResult.storageProvider,
         storageKey: uploadResult.storageKey,
+        blobName: uploadResult.blobName,
+        contentType: uploadResult.contentType,
+        sizeBytes: uploadResult.sizeBytes,
         reason,
       });
 
@@ -286,10 +380,15 @@ router.post(
       return res.status(201).json({
         ok: true,
         snapshot: {
+          sessionId: snapshot.sessionId,
           imageUrl: snapshot.imageUrl,
           emotion: snapshot.emotion,
           confidence: snapshot.confidence,
-          timestamp: snapshot.timestamp,
+          timestamp: toIsoTimestamp(snapshot.timestamp),
+          blobName: snapshot.blobName || snapshot.storageKey || null,
+          contentType: snapshot.contentType || "image/webp",
+          sizeBytes: Number(snapshot.sizeBytes || 0),
+          reason: snapshot.reason || null,
         },
       });
     } catch (error) {
@@ -310,12 +409,10 @@ router.post("/ingest/snapshot", async (req, res, next) => {
       metadata = {},
     } = req.body ?? {};
     if (!sessionId || !emotion || typeof confidence !== "number" || !imageUrl) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "sessionId, emotion, numeric confidence, and imageUrl are required",
-        });
+      return res.status(400).json({
+        error:
+          "sessionId, emotion, numeric confidence, and imageUrl are required",
+      });
     }
 
     await ensureSession(sessionId);
@@ -327,6 +424,9 @@ router.post("/ingest/snapshot", async (req, res, next) => {
       imageUrl,
       storageProvider: metadata.storageProvider ?? "r2",
       storageKey: metadata.storageKey ?? null,
+      blobName: metadata.blobName ?? metadata.storageKey ?? null,
+      contentType: metadata.contentType ?? "image/webp",
+      sizeBytes: Number(metadata.sizeBytes ?? 0),
       reason,
       metadata,
     });
@@ -334,10 +434,15 @@ router.post("/ingest/snapshot", async (req, res, next) => {
     return res.status(201).json({
       ok: true,
       snapshot: {
+        sessionId: snapshot.sessionId,
         imageUrl: snapshot.imageUrl,
         emotion: snapshot.emotion,
         confidence: snapshot.confidence,
-        timestamp: snapshot.timestamp,
+        timestamp: toIsoTimestamp(snapshot.timestamp),
+        blobName: snapshot.blobName || snapshot.storageKey || null,
+        contentType: snapshot.contentType || "image/webp",
+        sizeBytes: Number(snapshot.sizeBytes || 0),
+        reason: snapshot.reason || null,
       },
     });
   } catch (error) {
