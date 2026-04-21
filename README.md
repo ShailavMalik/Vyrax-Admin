@@ -44,3 +44,10 @@ npm run start:backend
 
 - Vercel frontend: set `VITE_API_BASE_URL` to the Railway backend API URL and deploy the repo root.
 - Railway backend: set `MONGODB_URI`, `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER_NAME`, `AZURE_STORAGE_PUBLIC_URL`, `STORAGE_PROVIDER=azure`, and `HOST=0.0.0.0`.
+
+If Railway does not show a root-directory option, this repo is already configured for that case via the root `railway.json`:
+
+- Build command: `npm install && npm --prefix backend install`
+- Start command: `npm run start:backend`
+
+This forces Railway to run the Express backend from `backend/` while still deploying from the repository root.
