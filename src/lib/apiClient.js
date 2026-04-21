@@ -33,12 +33,10 @@
 const DEFAULT_BASE_URL = "http://localhost:8000";
 
 function getBaseUrl() {
-  const baseUrl = String(
-    import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL,
-  ).replace(/\/$/, "");
-
-  // Remove /api suffix if present, since routes will add /api/...
-  return baseUrl.replace(/\/api$/, "");
+  return String(import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).replace(
+    /\/$/,
+    "",
+  );
 }
 
 function toApiUrl(path, params = {}) {
@@ -109,7 +107,7 @@ async function requestJson(path, params) {
 /** @returns {Promise<SnapshotItem[]>} */
 export async function fetchSnapshots(sessionId, limit) {
   const safeLimit = clampLimit(limit, 100, 1000);
-  const payload = await requestJson("/api/snapshots", {
+  const payload = await requestJson("/snapshots", {
     sessionId,
     limit: safeLimit,
   });
@@ -120,7 +118,7 @@ export async function fetchSnapshots(sessionId, limit) {
 /** @returns {Promise<EmotionItem[]>} */
 export async function fetchEmotions(sessionId, limit) {
   const safeLimit = clampLimit(limit, 500, 5000);
-  const payload = await requestJson("/api/emotions", {
+  const payload = await requestJson("/emotions", {
     sessionId,
     limit: safeLimit,
   });
@@ -130,7 +128,7 @@ export async function fetchEmotions(sessionId, limit) {
 
 /** @returns {Promise<SessionSummary|SessionSummary[]>} */
 export async function fetchSummary(sessionId) {
-  const payload = await requestJson("/api/summary", {
+  const payload = await requestJson("/summary", {
     sessionId,
     limit: "all",
   });
