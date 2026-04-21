@@ -3,27 +3,51 @@ export function SnapshotPanel({
   selectedSnapshotTimestamp,
   onSelectSnapshot,
   isConnected,
+  activeSnapshot,
 }) {
+  const latestSnapshot = snapshots[0] ?? null;
   const selectedSnapshot =
+    activeSnapshot ??
     snapshots.find(
       (snapshot) => snapshot.timestamp === selectedSnapshotTimestamp,
     ) ??
-    snapshots[0] ??
+    latestSnapshot ??
     null;
 
   return (
     <div className="snapshot-panel-wrapper">
       <div className="snapshot-panel-header">
-        <h2>Live Snapshots</h2>
+        <h2>Snapshot intelligence</h2>
         <span>{snapshots.length} captured</span>
       </div>
+
+      {selectedSnapshot ?
+        <div className="snapshot-panel-hero">
+          <img
+            className="snapshot-panel-hero__image"
+            src={selectedSnapshot.imageUrl}
+            alt={`${selectedSnapshot.label} snapshot`}
+            loading="lazy"
+          />
+          <div className="snapshot-panel-hero__meta">
+            <div>
+              <span className="snapshot-panel-hero__label">
+                {selectedSnapshot.emoji} {selectedSnapshot.label}
+              </span>
+              <p>{selectedSnapshot.timeLabel}</p>
+            </div>
+            <strong>{Math.round(selectedSnapshot.confidence * 100)}%</strong>
+          </div>
+        </div>
+      : null}
 
       {snapshots.length ?
         <div className="snapshot-feed">
           {snapshots.map((snapshot) => (
-            <div
-              className={`snapshot-item ${snapshot.timestamp === selectedSnapshotTimestamp ? "snapshot-item--selected" : ""}`}
+            <button
+              className={`snapshot-item ${snapshot.timestamp === selectedSnapshotTimestamp ? "snapshot-item--selected" : ""} ${snapshot.timestamp === latestSnapshot?.timestamp ? "snapshot-item--latest" : ""}`}
               key={`${snapshot.timestamp}-${snapshot.emotion}`}
+              type="button"
               onClick={() => onSelectSnapshot(snapshot.timestamp)}>
               <img
                 className="snapshot-item-image"
@@ -36,13 +60,18 @@ export function SnapshotPanel({
                   <span className="snapshot-item-label">
                     {snapshot.emoji} {snapshot.label}
                   </span>
-                  <span className="snapshot-item-time">{snapshot.timeLabel}</span>
+                  <span className="snapshot-item-time">
+                    {snapshot.timeLabel}
+                  </span>
                 </div>
                 <div className="snapshot-item-confidence">
                   {Math.round(snapshot.confidence * 100)}%
                 </div>
               </div>
-            </div>
+              {snapshot.timestamp === latestSnapshot?.timestamp ?
+                <span className="snapshot-item-badge">Latest</span>
+              : null}
+            </button>
           ))}
         </div>
       : <div className="snapshot-panel-empty">
@@ -53,7 +82,7 @@ export function SnapshotPanel({
       }
 
       <div className="snapshot-panel-status">
-        {isConnected ? "🟢 Live stream active" : "🟡 Connecting..."}
+        {isConnected ? "LIVE AI STREAM" : "CONNECTING"}
       </div>
     </div>
   );

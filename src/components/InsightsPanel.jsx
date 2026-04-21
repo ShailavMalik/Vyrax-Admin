@@ -8,7 +8,7 @@ export function InsightsPanel({ session, insights }) {
   return (
     <SectionCard
       title="Advanced analytics"
-      subtitle="Session-level behavior analysis and compact intelligence for operators and reviewers."
+      subtitle="Live intelligence generated from MongoDB emotion events and Azure snapshot telemetry."
       className="insights-panel">
       <div className="insight-list">
         <article className="insight-item">

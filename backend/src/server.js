@@ -6,8 +6,8 @@ async function bootstrap() {
   await connectDatabase();
 
   const app = createApp();
-  app.listen(env.port, () => {
-    console.log(`Vyra-X backend listening on http://localhost:${env.port}`);
+  app.listen(env.port, env.host, () => {
+    console.log(`Vyra-X backend listening on http://${env.host}:${env.port}`);
   });
 }
 

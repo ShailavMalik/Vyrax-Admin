@@ -37,7 +37,7 @@ export function createApp() {
 
   if (fs.existsSync(frontendDistDir)) {
     app.use(express.static(frontendDistDir));
-    app.get("*", (req, res, next) => {
+    app.get(/.*/, (req, res, next) => {
       if (req.path.startsWith("/api") || req.path.startsWith("/uploads")) {
         return next();
       }

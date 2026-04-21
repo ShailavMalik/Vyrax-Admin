@@ -5,7 +5,7 @@ export function RefreshButton({ onClick, isFetching }) {
       type="button"
       onClick={onClick}
       disabled={isFetching}>
-      {isFetching ? "Refreshing..." : "Manual refresh"}
+      {isFetching ? "Syncing..." : "Manual refresh"}
     </button>
   );
 }

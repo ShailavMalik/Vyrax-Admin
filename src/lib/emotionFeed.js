@@ -1,6 +1,6 @@
 export const EMOTIONS = {
-  neutral: { label: "Neutral", emoji: "◦", color: "#22d3ee", value: 2 },
   happy: { label: "Happy", emoji: "😊", color: "#facc15", value: 1 },
+  neutral: { label: "Neutral", emoji: "◦", color: "#22d3ee", value: 2 },
   sad: { label: "Sad", emoji: "🌧", color: "#60a5fa", value: 3 },
   angry: { label: "Angry", emoji: "🔥", color: "#ef4444", value: 4 },
   surprised: { label: "Surprised", emoji: "⚡", color: "#a855f7", value: 5 },
@@ -9,6 +9,23 @@ export const EMOTIONS = {
 const API_HEADERS = {
   Accept: "application/json",
 };
+
+const DEFAULT_API_BASE_URL = "/api";
+
+function normalizeBaseUrl(baseUrl) {
+  return String(baseUrl ?? DEFAULT_API_BASE_URL).replace(/\/$/, "");
+}
+
+function buildApiUrl(path) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const baseUrl = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL);
+
+  if (/^https?:\/\//i.test(baseUrl)) {
+    return `${baseUrl}${normalizedPath}`;
+  }
+
+  return `${baseUrl}${normalizedPath}`;
+}
 
 export function getEmotionMeta(emotion) {
   return (
@@ -53,7 +70,11 @@ export function formatDuration(seconds) {
 }
 
 async function requestJson(path, sessionId) {
-  const url = new URL(path, window.location.origin);
+  if (!sessionId) {
+    throw new Error("sessionId is required");
+  }
+
+  const url = new URL(buildApiUrl(path), window.location.origin);
   url.searchParams.set("sessionId", sessionId);
 
   const response = await fetch(url, {
@@ -69,19 +90,15 @@ async function requestJson(path, sessionId) {
 }
 
 export function fetchEmotionTimeline(sessionId) {
-  return requestJson("/api/emotions", sessionId);
+  return requestJson("/emotions", sessionId);
 }
 
 export function fetchSnapshots(sessionId) {
-  return requestJson("/api/snapshots", sessionId);
+  return requestJson("/snapshots", sessionId);
 }
 
 export function fetchSummary(sessionId) {
-  return requestJson("/api/summary", sessionId);
-}
-
-export function fetchSystemStatus(sessionId) {
-  return requestJson("/api/system-status", sessionId);
+  return requestJson("/summary", sessionId);
 }
 
 export function mergeByTimestamp(
@@ -174,6 +191,8 @@ export function buildInsights({
   transitionsCount,
   avgConfidence,
   dominantEmotion,
+  snapshotsCount,
+  latestSnapshotAgeSeconds,
 }) {
   const insights = [];
 
@@ -189,15 +208,25 @@ export function buildInsights({
 
   insights.push(
     avgConfidence >= 0.88 ?
-      "Confidence is consistently high across recent frames."
+      "Confidence is consistently high across the live stream."
     : "Confidence variance remains within the monitored operating envelope.",
   );
 
   insights.push(
     dominantEmotion === "happy" || dominantEmotion === "surprised" ?
-      "Strong positive trend is visible in the current session."
+      "Positive trend observed across recent emotion telemetry."
+    : dominantEmotion === "angry" || dominantEmotion === "sad" ?
+      "High fluctuation detected in the current emotional band."
     : "Neutral and reactive states remain balanced without drift.",
   );
+
+  if (snapshotsCount > 0 && latestSnapshotAgeSeconds != null) {
+    insights.push(
+      latestSnapshotAgeSeconds <= 4 ?
+        "Snapshot capture is synchronized with the emotion stream."
+      : "Snapshot capture cadence is lagging behind the live stream.",
+    );
+  }
 
   return insights.slice(0, 3);
 }
@@ -243,4 +272,34 @@ export function normalizeSnapshots(rawSnapshots) {
       timeLabel: formatDateTime(snapshot.timestamp),
     }))
     .sort((left, right) => right.timestamp - left.timestamp);
+}
+
+export function findClosestSnapshot(snapshots, timestamp) {
+  if (
+    !Array.isArray(snapshots) ||
+    snapshots.length === 0 ||
+    timestamp == null
+  ) {
+    return null;
+  }
+
+  return snapshots.reduce((winner, snapshot) => {
+    if (!winner) {
+      return snapshot;
+    }
+
+    const currentDistance = Math.abs(snapshot.timestamp - timestamp);
+    const winnerDistance = Math.abs(winner.timestamp - timestamp);
+    return currentDistance < winnerDistance ? snapshot : winner;
+  }, null);
+}
+
+export function calculateSessionDuration(timeline) {
+  if (!Array.isArray(timeline) || timeline.length < 2) {
+    return 0;
+  }
+
+  const start = timeline[0]?.timestamp ?? 0;
+  const end = timeline.at(-1)?.timestamp ?? 0;
+  return Math.max(0, Math.round((end - start) / 1000));
 }

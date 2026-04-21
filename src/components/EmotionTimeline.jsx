@@ -37,8 +37,9 @@ function TimelineDot({
   cx,
   cy,
   payload,
-  onSnapshotSelect,
+  onPointSelect,
   selectedSnapshotTimestamp,
+  latestTimestamp,
 }) {
   if (cx == null || cy == null || !payload) {
     return null;
@@ -46,25 +47,39 @@ function TimelineDot({
 
   const emotion = EMOTIONS[payload.emotion] ?? EMOTIONS.neutral;
   const isSelected = payload.snapshotTimestamp === selectedSnapshotTimestamp;
-  const isHot = payload.isPeak || isSelected;
+  const isLatest = payload.timestamp === latestTimestamp;
+  const isHot = payload.isPeak || isSelected || isLatest;
 
   return (
     <g
-      style={{ cursor: payload.snapshotTimestamp ? "pointer" : "default" }}
-      onClick={() =>
-        payload.snapshotTimestamp && onSnapshotSelect(payload.snapshotTimestamp)
-      }>
+      style={{ cursor: "pointer" }}
+      onClick={() => onPointSelect?.(payload.timestamp)}>
       <circle
         cx={cx}
         cy={cy}
-        r={isHot ? 8 : 5}
+        r={
+          isLatest ? 8.5
+          : isHot ?
+            8
+          : 5
+        }
         fill={emotion.color}
         opacity="0.95"
+        style={
+          isLatest ?
+            { animation: "timelinePulse 1.3s ease-in-out infinite" }
+          : undefined
+        }
       />
       <circle
         cx={cx}
         cy={cy}
-        r={isHot ? 13 : 9}
+        r={
+          isLatest ? 16
+          : isHot ?
+            13
+          : 9
+        }
         fill={emotion.color}
         opacity="0.16"
       />
@@ -86,8 +101,10 @@ function TimelineDot({
 export function EmotionTimeline({
   timeline,
   selectedSnapshotTimestamp,
-  onSnapshotSelect,
+  onPointSelect,
   isConnected,
+  isFetching,
+  hasData,
 }) {
   const chartData = useMemo(
     () =>
@@ -105,19 +122,26 @@ export function EmotionTimeline({
     },
     { score: 0, point: chartData[chartData.length - 1] ?? null },
   ).point;
+  const latestPoint = chartData.at(-1) ?? null;
 
   const chartLegend = [
     { label: "Emotion state", color: "#22d3ee" },
     { label: "Peak moments", color: "#c084fc" },
-    { label: "Stored snapshots", color: "#facc15" },
+    { label: "Selected snapshot", color: "#facc15" },
   ];
 
   if (!chartData.length) {
     return (
       <div className="timeline-empty">
-        <div className="timeline-empty__dot"></div>
-        <p>Connecting to AI stream...</p>
-        <span>Live data stream active</span>
+        <div
+          className={`timeline-empty__dot ${isFetching ? "timeline-empty__dot--active" : ""}`}
+        />
+        <p>
+          {hasData ?
+            "Waiting for the next emotion frame..."
+          : "Connecting to AI stream..."}
+        </p>
+        <span>Polling every 2 seconds from the backend API</span>
       </div>
     );
   }
@@ -137,7 +161,7 @@ export function EmotionTimeline({
           ))}
         </div>
         <span className="chart-meta">
-          Peak signal:{" "}
+          {isConnected ? "Connected" : "Searching"} · Peak signal:{" "}
           <strong>
             {peakPoint ? `${peakPoint.emoji} ${peakPoint.label}` : "—"}
           </strong>
@@ -204,15 +228,17 @@ export function EmotionTimeline({
               dot={(props) => (
                 <TimelineDot
                   {...props}
-                  onSnapshotSelect={onSnapshotSelect}
+                  onPointSelect={onPointSelect}
                   selectedSnapshotTimestamp={selectedSnapshotTimestamp}
+                  latestTimestamp={latestPoint?.timestamp ?? null}
                 />
               )}
               activeDot={(props) => (
                 <TimelineDot
                   {...props}
-                  onSnapshotSelect={onSnapshotSelect}
+                  onPointSelect={onPointSelect}
                   selectedSnapshotTimestamp={selectedSnapshotTimestamp}
+                  latestTimestamp={latestPoint?.timestamp ?? null}
                 />
               )}
             />
@@ -235,9 +261,11 @@ export function EmotionTimeline({
         </div>
         <div className="timeline-stat">
           <span>Peak</span>
-          <strong>
-            {peakPoint ? `${peakPoint.emoji}` : "—"}
-          </strong>
+          <strong>{peakPoint ? `${peakPoint.emoji}` : "—"}</strong>
+        </div>
+        <div className="timeline-stat">
+          <span>Live</span>
+          <strong>{isFetching ? "Syncing" : "Ready"}</strong>
         </div>
       </div>
     </div>

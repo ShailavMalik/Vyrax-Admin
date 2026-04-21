@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   buildInsights,
@@ -7,10 +7,9 @@ import {
   fetchEmotionTimeline,
   fetchSnapshots,
   fetchSummary,
-  fetchSystemStatus,
   formatDuration,
   getEmotionMeta,
-  mergeByTimestamp,
+  calculateSessionDuration,
   normalizeEmotionTimeline,
   normalizeSnapshots,
 } from "../lib/emotionFeed.js";
@@ -61,12 +60,7 @@ function deriveSummary(timeline, summaryPayload) {
     : 0;
 
   const transitions = summaryPayload?.transitions ?? 0;
-  const firstTimestamp = timeline[0]?.timestamp ?? null;
-  const lastTimestamp = timeline.at(-1)?.timestamp ?? null;
-  const sessionDurationSeconds =
-    firstTimestamp && lastTimestamp ?
-      Math.max(0, Math.round((lastTimestamp - firstTimestamp) / 1000))
-    : 0;
+  const sessionDurationSeconds = calculateSessionDuration(timeline);
   const stabilityScore = calculateStabilityScore(
     timeline,
     transitions,
@@ -116,13 +110,7 @@ function deriveSummary(timeline, summaryPayload) {
 }
 
 export function useEmotionDashboard() {
-  const [sessionId, setSessionId] = useState(null);
-  const [timeline, setTimeline] = useState([]);
-  const [snapshots, setSnapshots] = useState([]);
-
-  useEffect(() => {
-    setSessionId(getSessionId());
-  }, []);
+  const [sessionId] = useState(() => getSessionId());
 
   const emotionsQuery = useQuery({
     queryKey: ["emotion-dashboard", sessionId, "emotions"],
@@ -131,7 +119,7 @@ export function useEmotionDashboard() {
     refetchInterval: 2000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: false,
-    staleTime: 1800,
+    staleTime: 1000,
     placeholderData: (previousData) => previousData,
   });
 
@@ -142,7 +130,7 @@ export function useEmotionDashboard() {
     refetchInterval: 2000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: false,
-    staleTime: 1800,
+    staleTime: 1000,
     placeholderData: (previousData) => previousData,
   });
 
@@ -153,42 +141,29 @@ export function useEmotionDashboard() {
     refetchInterval: 2000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: false,
-    staleTime: 1800,
+    staleTime: 1000,
     placeholderData: (previousData) => previousData,
   });
 
-  const systemQuery = useQuery({
-    queryKey: ["emotion-dashboard", sessionId, "system"],
-    queryFn: () => fetchSystemStatus(sessionId),
-    enabled: Boolean(sessionId),
-    refetchInterval: 2000,
-    refetchIntervalInBackground: true,
-    refetchOnWindowFocus: false,
-    staleTime: 1800,
-    placeholderData: (previousData) => previousData,
-  });
+  const normalizedTimeline = useMemo(
+    () => normalizeEmotionTimeline(emotionsQuery.data),
+    [emotionsQuery.data],
+  );
 
-  useEffect(() => {
-    if (!emotionsQuery.data) {
-      return;
-    }
+  const timeline = useMemo(
+    () => normalizedTimeline.slice(-30),
+    [normalizedTimeline],
+  );
 
-    const normalizedTimeline = normalizeEmotionTimeline(emotionsQuery.data);
-    setTimeline((previousTimeline) =>
-      mergeByTimestamp(previousTimeline, normalizedTimeline, 30, "asc"),
-    );
-  }, [emotionsQuery.data]);
+  const normalizedSnapshots = useMemo(
+    () => normalizeSnapshots(snapshotsQuery.data),
+    [snapshotsQuery.data],
+  );
 
-  useEffect(() => {
-    if (!snapshotsQuery.data) {
-      return;
-    }
-
-    const normalizedSnapshots = normalizeSnapshots(snapshotsQuery.data);
-    setSnapshots((previousSnapshots) =>
-      mergeByTimestamp(previousSnapshots, normalizedSnapshots, 8, "desc"),
-    );
-  }, [snapshotsQuery.data]);
+  const snapshots = useMemo(
+    () => normalizedSnapshots.slice(0, 8),
+    [normalizedSnapshots],
+  );
 
   const enrichedTimeline = useMemo(
     () => enrichTimeline(timeline, snapshots),
@@ -199,6 +174,19 @@ export function useEmotionDashboard() {
     () => deriveSummary(enrichedTimeline, summaryQuery.data),
     [enrichedTimeline, summaryQuery.data],
   );
+
+  const latestSnapshotAgeSeconds = useMemo(() => {
+    const latestTimelineTimestamp = enrichedTimeline.at(-1)?.timestamp ?? null;
+    const latestSnapshotTimestamp = snapshots[0]?.timestamp ?? null;
+
+    if (latestTimelineTimestamp == null || latestSnapshotTimestamp == null) {
+      return null;
+    }
+
+    return Math.abs(
+      Math.round((latestTimelineTimestamp - latestSnapshotTimestamp) / 1000),
+    );
+  }, [enrichedTimeline, snapshots]);
 
   const distribution = useMemo(
     () => calculateDistribution(enrichedTimeline),
@@ -212,8 +200,10 @@ export function useEmotionDashboard() {
         transitionsCount: summary.transitions,
         avgConfidence: summary.avgConfidence,
         dominantEmotion: summary.dominantEmotion,
+        snapshotsCount: snapshots.length,
+        latestSnapshotAgeSeconds,
       }),
-    [summary],
+    [summary, snapshots.length, latestSnapshotAgeSeconds],
   );
 
   const data = useMemo(
@@ -224,9 +214,10 @@ export function useEmotionDashboard() {
       summary,
       distribution,
       insights,
-      system: systemQuery.data ?? null,
-      cloudflare: systemQuery.data?.cloudflare ?? null,
       hasData: enrichedTimeline.length > 0,
+      latestSnapshotTimestamp: snapshots[0]?.timestamp ?? null,
+      latestEmotionTimestamp: enrichedTimeline.at(-1)?.timestamp ?? null,
+      latestSnapshotAgeSeconds,
     }),
     [
       sessionId,
@@ -235,7 +226,7 @@ export function useEmotionDashboard() {
       summary,
       distribution,
       insights,
-      systemQuery.data,
+      latestSnapshotAgeSeconds,
     ],
   );
 
@@ -244,22 +235,19 @@ export function useEmotionDashboard() {
       emotionsQuery.refetch(),
       snapshotsQuery.refetch(),
       summaryQuery.refetch(),
-      systemQuery.refetch(),
     ]);
-  }, [emotionsQuery, snapshotsQuery, summaryQuery, systemQuery]);
+  }, [emotionsQuery, snapshotsQuery, summaryQuery]);
 
   return {
     data,
     isLoading:
       emotionsQuery.isLoading ||
       snapshotsQuery.isLoading ||
-      summaryQuery.isLoading ||
-      systemQuery.isLoading,
+      summaryQuery.isLoading,
     isFetching:
       emotionsQuery.isFetching ||
       snapshotsQuery.isFetching ||
-      summaryQuery.isFetching ||
-      systemQuery.isFetching,
+      summaryQuery.isFetching,
     refetch,
   };
 }

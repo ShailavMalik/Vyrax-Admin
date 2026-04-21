@@ -3,13 +3,15 @@ import path from "path";
 import { fileURLToPath } from "url";
 import crypto from "crypto";
 import sharp from "sharp";
+import { BlobServiceClient } from "@azure/storage-blob";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { env, hasR2Config } from "../config/env.js";
+import { env, hasAzureBlobConfig, hasR2Config } from "../config/env.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOCAL_UPLOAD_DIR = path.resolve(__dirname, "../../uploads");
 
 let r2Client = null;
+let azureBlobClient = null;
 
 async function ensureLocalUploadDir() {
   await fs.mkdir(LOCAL_UPLOAD_DIR, { recursive: true });
@@ -34,6 +36,20 @@ function createR2Client() {
   return r2Client;
 }
 
+function createAzureBlobClient() {
+  if (!hasAzureBlobConfig()) {
+    return null;
+  }
+
+  if (!azureBlobClient) {
+    azureBlobClient = BlobServiceClient.fromConnectionString(
+      env.azureStorageConnectionString,
+    );
+  }
+
+  return azureBlobClient;
+}
+
 function createStorageKey({ sessionId, emotion, timestamp }) {
   return `sessions/${sessionId}/snapshots/${timestamp}-${emotion}-${crypto.randomUUID()}.webp`;
 }
@@ -52,7 +68,29 @@ export async function storeSnapshotAsset({
     .toBuffer();
 
   const storageKey = createStorageKey({ sessionId, emotion, timestamp });
-  const publicBaseUrl = env.cloudflareR2PublicUrl.replace(/\/$/, "");
+  const publicBaseUrl =
+    env.azureStoragePublicUrl.replace(/\/$/, "") ||
+    env.cloudflareR2PublicUrl.replace(/\/$/, "");
+  const azureClient = createAzureBlobClient();
+
+  if (env.storageProvider === "azure" && azureClient) {
+    const containerClient = azureClient.getContainerClient(
+      env.azureStorageContainerName,
+    );
+    await containerClient.createIfNotExists({ access: "blob" });
+
+    const blockBlobClient = containerClient.getBlockBlobClient(storageKey);
+    await blockBlobClient.uploadData(compressedBuffer, {
+      blobHTTPHeaders: { blobContentType: "image/webp" },
+    });
+
+    return {
+      storageProvider: "azure",
+      storageKey,
+      imageUrl: `${publicBaseUrl}/${storageKey}`,
+    };
+  }
+
   const remoteClient = createR2Client();
 
   if (remoteClient) {
